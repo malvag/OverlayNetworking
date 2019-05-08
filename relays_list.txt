@@ -1,0 +1,3 @@
+kiwi, kiwi.csd.uoc.gr , 13655
+mandarini, mandarini.csd.uoc.gr , 13655
+thanatos, thanatos.csd.uoc.gr , 13655
