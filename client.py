@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import hashlib
 import socket
 import requests
 import argparse
@@ -9,14 +10,144 @@ import os
 import re
 import subprocess
 import threading
+import Crypto
+from Crypto import Random
+from Crypto.PublicKey import RSA
+import Crypto.Cipher.AES as AES
+from Crypto.Hash import SHA256
+from Crypto.PublicKey import DSA
+
+import pickle
 
 threads = []
 statistics = []
 tLock = threading.Lock()
 
+#Function will return the index of the route in statistics
+def RouteSelection(factor):
+        print("Route Selection was initiated")
+        statistics_tmp = []
+        statistics_equal = []
+        Count = 0
+        if factor == 'latency':
+                for s in statistics:
+                        print(s.rtt)
+                        statistics_tmp.append(s.rtt)
+                Min = min(statistics_tmp)
+                print('Min rtt is: ' + str(Min))
+
+                for s in statistics:
+                        for s1 in statistics:
+                                if s1.rtt == s.rtt:
+                                        Count += 1
+
+                if Count > len(statistics):
+                        print("Two or more routs have the same RTT value. Hops factor will be applied")
+
+#If there are >=2 equal we chance factor
+                        Count = 0
+                        for s in statistics:
+                                print(s.hops)
+                                statistics_equal.append(int(s.hops))
+                        Min = min(statistics_equal)
+                        print('Min hops are: ' + str(Min))
+
+                        for s in statistics:
+                                if Min == s.hops:
+                                        Count += 1
+                        print('Min hops appears: ' + str(Count) + ' times')
+                        if Count > 1:
+                                index = 0
+                                for s2 in statistics:
+                                        if s2.hops  == Min :
+                                                break
+                                        index += 1
+                                print(index)
+                                return index
+                        #ELSE
+                        index = 0
+                        for s2 in statistics:
+                                if s2.hops == Min :
+                                        break
+                                index +=1
+                        print(index)
+                        return index
+
+#Find the index of the Min
+                index = 0
+                for s2 in statistics:
+                        if(s2.rtt == Min):
+                                break
+                        index += 1
+                print(index)
+                return index
+
+
+        if factor == 'hops':
+                for s in statistics:
+                        print(s.hops)
+                        statistics_tmp.append(int(s.hops))
+                Min = min(statistics_tmp)
+                print('Min hops are: ' + str(Min))
+
+                for s in statistics:
+                        for s1 in statistics:
+                                if s1.hops == s.hops:
+                                        Count += 1
+#if there are >=2 equal. We chance factor
+                if Count > len(statistics):
+                        print(bcolors.WARNING+"Two or more routes have the same Hops. RTT factor will be applied..."+bcolors.ENDC)
+                        Count = 0
+                        for s in statistics:
+                                print(s.rtt)
+                                statistics_equal.append(s.rtt)
+                        Min = min(statistics_equal)
+                        print("Min RTT: " + str(Min))
+
+                        for s in statistics:
+                                if Min == s.rtt:
+                                        Count += 1
+                        print("Min RTT appears: " + str(Count) + " times")
+                        if Count > 1:
+                                print("The number of results is greater that 1. Route will be random")
+                                index = 0
+                                for s2 in statistics:
+                                        if(s2.rtt == Min):
+                                                break
+                                        index += 1
+                                print(index)
+                                return index
+                        #ELSE
+                        index = 0
+                        for s2 in statistics:
+                                if (s2.rtt == Min):
+                                        break
+                                index += 1
+                        print(index)
+                        return index
+
+        #if hops was enough
+                index = 0
+                for s2 in statistics:
+                        if(s2.hops == Min):
+                                break
+                        index += 1
+                print(index)
+                return index
+
+def acquire_relays_from_file():
+    relays = []
+    f1 = open(args.rels,"r")
+    for line in f1:
+        x,y,z = line.split(", ")
+        relays.append((y,int(z)))
+    return relays
+
+
+
+
 def SearchAlias(Alias):
 	f1 = open(args.ends,"r")
-	
 	for line in f1:
 		x,y = line.split(", ")
 		Alias_y = y[:(len(y)-1)]
@@ -43,8 +174,9 @@ class myThread (threading.Thread):
         print ("Exiting " + self.name)
 
 class Relay_benchmark:
-    def __init__(self,relay_host,rtt,hops):
+    def __init__(self,relay_host,rtt,hops,port):
         self.relay_host = relay_host
+        self.port = port
         self.rtt = rtt
         self.hops = hops
 
@@ -111,16 +243,37 @@ def create_socket_with_host(HOST,PORT):
             s= socket.socket(socket.AF_INET,socket.SOCK_STREAM)
 
             s.connect((remote_ip,PORT))
-            
             print("Socket connected to "+ HOST + " on "+ remote_ip )
-            return s
+            key = RSA.generate(1024)
+            #creating public and private keys
+            public = key.publickey().exportKey()
+            text = b"36553653"
+            hash = SHA256.new(text).digest()
+            signature = key.sign(hash, '')
+            print('signature=', signature)
+            s.send(public)
+            s.recv(1024)
+            s.send(pickle.dumps(signature))
+            s.recv(1024)
+            s.send(hash)
+            rpub = s.recv(1024)
+            msg = str('geia').encode()
+            #crypto
+            #hash = SHA256.new(msg).digest()
+            #signature = key.sign(hash,'')
+            #hash = pickle.dumps( str(hash) +'|'+ str(signature[0]))
+            #rkey = RSA.importKey(rpub)
+            #rkey.encrypt(hash,4096)
+            #s.send(hash)
+
+            return s,public,key,rpub
 
     except  socket.error:
             print("Failed to Connect")
             sys.exit()
 
 def benchmark(RELAY_HOST,RELAY_PORT,end_server,num_of_pings):
-    s = create_socket_with_host(RELAY_HOST,RELAY_PORT)
+    s,pub,key,rpub = create_socket_with_host(RELAY_HOST,RELAY_PORT)
     s.send(str(end_server+','+num_of_pings).encode())
     data = s.recv(1024)#have to send to relay num of pings
     matcher = re.compile("(\d+.\d+),(\d+)")
@@ -130,26 +283,42 @@ def benchmark(RELAY_HOST,RELAY_PORT,end_server,num_of_pings):
     client_relay_hops = hops(RELAY_HOST,30)
     print(bcolors.OKGREEN+'Client -> Relay '+threading.currentThread().host +' sent '+ str(client_relay_rtt)+' rtt and '+ str(client_relay_hops)+' hops' + bcolors.ENDC)
     tLock.acquire()
-    new_benchmark = Relay_benchmark(RELAY_HOST,str(round(float(parsed[0]) + float(client_relay_rtt),3)),str(int(parsed[1]) + int(client_relay_hops)))
+    new_benchmark = Relay_benchmark(RELAY_HOST,str(round(float(parsed[0]) + float(client_relay_rtt),3)),str(int(parsed[1]) + int(client_relay_hops)),RELAY_PORT)
     statistics.append(new_benchmark)
     tLock.release()
     s.close()
 
+def HttpRequest(HOST,PORT,END):
+    url = input("Type the file's url to download from the end-server: ")
+    if(END is HOST):#direct
+        r = requests.get(url,allow_redirects=True)
+        typed,ext = str(r.headers.get('content-type')).lower().split('/')
+        open('downloaded.'+ext, 'wb').write(r.content)
+    else:
+        s,pub,key,rpub = create_socket_with_host(HOST,PORT)
+        s.send(str(END+','+url).encode())
+        print("Request Sent",END,url)
+        start = time.time()
+        while True:
+                data = s.recv(1024)#have to send to relay num of ping
+                # typed,ext = str(data.headers.get('content-type')).lower().split('/')
+                if not data:
+                        break
+                open('downloaded.png', 'ab+').write(data)
+        end = time.time()
+        print(bcolors.OKBLUE+'Download time for file ',str(round(end-start,3))+bcolors.ENDC)
 
 def main_thread(end_server,ping_num):
     print("Initiated")
 
 # file IO
 # have to pass in the latency for beanchmarking purposes
-    thread1 = myThread(0,'kos.csd.uoc.gr',13655,end_server,ping_num)
-    thread2 = myThread(1,'dia.csd.uoc.gr',13655,end_server,ping_num)
-    thread3 = myThread(2,'naxos.csd.uoc.gr',13655,end_server,ping_num)
-    thread4 = myThread(3,'limnos.csd.uoc.gr',13655,end_server,ping_num)
-
-    threads.append(thread1)
-    threads.append(thread2)
-    threads.append(thread3)
-    threads.append(thread4)
+    relays = acquire_relays_from_file()
+    i = 0
+    for r in relays:
+        threadX = myThread(i,r[0],r[1],end_server,ping_num)
+        threads.append(threadX)
+        i +=1
 
 
     for t in threads:
@@ -160,10 +329,9 @@ def main_thread(end_server,ping_num):
 
     for s in statistics:
         print(bcolors.OKBLUE +'Route through '+ s.relay_host,s.rtt , s.hops,bcolors.ENDC)
-    print(bcolors.OKBLUE+"Direct hops " + str(hops(end_server,30)) + " and with avg rtt "+str(rtt(end_server,"2"))+bcolors.ENDC)
-    print ("Exiting Main Thread")
-
-    
+    direct = Relay_benchmark(end_server,str(rtt(end_server,str(ping_num))),str(hops(end_server,30)),80)
+    statistics.append(direct)
+    print(bcolors.OKBLUE+"Direct hops " + direct.hops + " and with avg rtt "+direct.rtt+bcolors.ENDC)
 
 
 if __name__ == "__main__": 
@@ -177,9 +345,17 @@ if __name__ == "__main__":
     f1.close()
 
 #getting the infos from command line
-    End_server_alias , Number_of_pings , latency = input("Type informations of the end-server you want to connect with: ").split()
+    End_server_alias , Number_of_pings , Selection_factor = (input("Type informations of the end-server you want to connect with: ") or "google 1 latency").split()
 
 #Search for the alias in file
     End_server = SearchAlias(End_server_alias)
     print(End_server)
     main_thread(End_server,Number_of_pings) #define run as main func
+    best_route_index = RouteSelection(Selection_factor)
+    best_route = statistics[best_route_index]
+    route_path = best_route.relay_host
+    if(best_route.relay_host==End_server):
+        route_path = "direct to "+End_server
+    print(bcolors.OKBLUE + "Selecting optimal route : (" +route_path,best_route.rtt,best_route.hops+")"+bcolors.ENDC)
+    HttpRequest(best_route.relay_host,best_route.port,End_server) 
+    print("Exiting main thread")

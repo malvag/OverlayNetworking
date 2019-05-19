@@ -1,0 +1,4 @@
+dia, dia.csd.uoc.gr, 13655
+kos, kos.csd.uoc.gr, 13655
+limnos, limnos.csd.uoc.gr, 13655
+naxos, naxos.csd.uoc.gr, 13655
