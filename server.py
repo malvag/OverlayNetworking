@@ -24,12 +24,11 @@ def hops(HOST,MAX_TTL):
         matcher = re.compile("(\d+) packets transmitted, (\d+) received, \+(\d+) errors, (\d+)% packet loss, time (\d+)ms")
         parsed = matcher.search(str(ping_out))
         if(parsed == None):
-            print("tracerouting... "+str(TTL),end='\r')
             TTL = TTL - 1
             continue
         break
 
-    print("tracerouting completed with "+str(TTL+1) +" hops for " + HOST )
+    print(str(TTL+1) +" hops for " + HOST )
     return TTL+1
 
 def rtt(HOST,NUM_OF_PINGS):
@@ -74,11 +73,13 @@ def clientthread(conn):
                 except:
                     print("Hostname could not be resolved")
                     exit()
-                print(end_server + " benchmark")
+                print(end_server + " to rtt")
                 roundtrip = rtt(end_server,ping_num)
+                print("tracerouting...")
                 hop_count = hops(end_server,30)
+                print("tracerouting completed")
                 break
-        print("Relay to end_server rtt is "+ str(roundtrip) + " and "+ str(hop_count) + " hops.")
+        print("RTT to end is "+ str(roundtrip) + " and "+ str(hop_count) + " hops.")
         conn.send(str(str(roundtrip)+","+str(hop_count)).encode())
         conn.close()
 

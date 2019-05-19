@@ -16,6 +16,7 @@ tLock = threading.Lock()
 
 def SearchAlias(Alias):
 	f1 = open(args.ends,"r")
+	
 	for line in f1:
 		x,y = line.split(", ")
 		Alias_y = y[:(len(y)-1)]
